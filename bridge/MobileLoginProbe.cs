@@ -9,7 +9,7 @@ namespace StormPT.MobileLab
 {
     public sealed class MobileLoginProbeResult
     {
-        public string Account { get; internal set; }
+        public string Account { get; internal set; } = "";
         public bool HasPasswordField { get; internal set; }
         public int ClientVersion { get; internal set; }
         public int ParsedFields { get; internal set; }
@@ -29,7 +29,7 @@ namespace StormPT.MobileLab
             int fields = 0;
             bool seenAccount = false;
             bool seenPassword = false;
-            string account = null;
+            string account = "";
             int clientVersion = -1;
 
             while (pos < data.Length)
