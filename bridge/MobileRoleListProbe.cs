@@ -9,7 +9,8 @@ namespace StormPT.MobileLab
     public sealed class MobileRoleListProbeResult
     {
         public int GameId { get; internal set; }
-        public string ClaimedAccount { get; internal set; } = "";
+        public string ClaimedAccount { get; internal set; }
+        public MobileRoleListProbeResult() { ClaimedAccount = ""; }
         public bool HasAccountType { get; internal set; }
     }
 
