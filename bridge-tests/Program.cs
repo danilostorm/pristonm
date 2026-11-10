@@ -28,6 +28,21 @@ static class Test
         throw new Exception("FAILED (not rejected): " + caseName);
     }
 
+    private static byte[] Position(uint area, int x, int y, int z, short hp, short maxHp)
+    {
+        var bytes = new byte[DesktopPositionDecoder.PositionFrameBytes];
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(0, 4), bytes.Length);
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(4, 4),
+            DesktopPositionDecoder.PositionOpcode);
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(8, 4), area);
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(12, 4), x);
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(16, 4), y);
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(20, 4), z);
+        BinaryPrimitives.WriteInt16LittleEndian(bytes.AsSpan(24, 2), hp);
+        BinaryPrimitives.WriteInt16LittleEndian(bytes.AsSpan(26, 2), maxHp);
+        return bytes;
+    }
+
     public static int Main()
     {
         var f = new DesktopWireFramer();
@@ -109,7 +124,66 @@ static class Test
         Check(typeof(DesktopFrameInfo).GetProperties().All(p =>
               p.PropertyType == typeof(int)), "metadata-only frame result");
 
-        Console.WriteLine($"PASS: {passed} Desktop protocol framing assertions.");
+        // TRANS_PLAYPOS is size(4), opcode(4), area(4), xyz(12), Hp[2](4).
+        var position = Position(7, 256 * 5, -256 * 3, 128, 50, 100);
+        var movement = DesktopPositionDecoder.Decode(position);
+        Check(movement.RawAreaCode == 7 && movement.AreaCode == 7,
+              "movement field area");
+        Check(movement.RawX == 1280 && movement.RawY == -768 &&
+              movement.RawZ == 128, "raw world position fixed-point");
+        Check(movement.X == 5 && movement.Y == -3 && movement.Z == 0.5,
+              "convert original FLOATNS shift 8");
+        Check(movement.CurrentHp == 50 && movement.MaximumHp == 100,
+              "original short Hp fields");
+        Check(movement.BasicHpPlausibility, "basic health plausibility on sample");
+        var view = DesktopPositionView.FromObservation(movement);
+        Check(view.AreaCode == 7 && view.X == 5 &&
+              view.WorldAccessGranted == false,
+              "public position view never grants world access");
+        Check(f.Feed(position).Single() ==
+              new DesktopFrameInfo(28, DesktopPositionDecoder.PositionOpcode, 20),
+              "position combines with generic TCP framing");
+
+        var outsideStage = DesktopPositionDecoder.Decode(
+            Position(uint.MaxValue, -1, -257, int.MaxValue, 0, 0));
+        Check(outsideStage.AreaCode is null && !outsideStage.HasArea,
+              "negative one area encodes absent map");
+        Check(outsideStage.Y == -257.0 / 256.0 &&
+              outsideStage.Z == (double)int.MaxValue / 256.0,
+              "negative and extreme raw coordinates decode without overflow");
+        var suspiciousHp = DesktopPositionDecoder.Decode(
+            Position(0, 0, 0, 0, -1, 60));
+        Check(!suspiciousHp.BasicHpPlausibility,
+              "negative health flagged without mutating player");
+        var tooHighHp = DesktopPositionDecoder.Decode(
+            Position(1, 0, 0, 0, 201, 100));
+        Check(!tooHighHp.BasicHpPlausibility,
+              "implausible health flagged without server writes");
+
+        var spoofedOpcode = (byte[])position.Clone();
+        BinaryPrimitives.WriteInt32LittleEndian(spoofedOpcode.AsSpan(4, 4), 34);
+        Throws<FormatException>(() => DesktopPositionDecoder.Decode(spoofedOpcode),
+              "wrong opcode is not a position frame");
+
+        var spoofedLength = (byte[])position.Clone();
+        BinaryPrimitives.WriteInt32LittleEndian(spoofedLength.AsSpan(0, 4), 8192);
+        Throws<FormatException>(() => DesktopPositionDecoder.Decode(spoofedLength),
+              "wrong declared length is not a position frame");
+
+        Throws<FormatException>(() => DesktopPositionDecoder.Decode(position.AsSpan(0, 27)),
+              "truncated position frame rejected");
+
+        Check(DesktopPositionDecoder.PositionFrameBytes == 28 &&
+              DesktopPositionDecoder.PositionOpcode == 23,
+              "native movement opcode and frame size");
+        Check(DesktopPositionObservation.FixedPointShift == 8 &&
+              DesktopPositionObservation.FixedPointFactor == 256,
+              "native FLOATNS fixed-point shift");
+        Check(typeof(DesktopPositionObservation).GetProperties()
+              .All(p => p.Name != "Authenticated" && p.Name != "Authorized"),
+              "movement observation cannot represent session authorization");
+
+        Console.WriteLine($"PASS: {passed} Desktop protocol framing and position assertions.");
         Console.WriteLine("PASS: no network, no player credentials, no server modification.");
         Console.WriteLine("NOTE: packet opcode handlers, encryption and world state are NOT implemented.");
         return 0;
