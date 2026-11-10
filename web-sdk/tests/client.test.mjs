@@ -121,3 +121,47 @@ test("server availability and throttling have typed errors", async () => {
       e.status === status && !e.message.includes("details-not-exposed"));
   }
 });
+
+test("character reservation is authenticated, temporary and does not enter the world", async () => {
+  const calls = [];
+  const client = new StormPTGatewayClient({
+    fetchImpl: async (path, options) => {
+      calls.push({ path, options });
+      if (path === "/v1/sessions")
+        return asJson({ access_token: T, token_type: "Bearer", expires_in: 900 });
+      assert.equal(options.headers.Authorization, "Bearer " + T);
+      assert.equal(JSON.parse(options.body).name, "LabKnight");
+      if (path === "/v1/characters/reserve")
+        return asJson({ name: "LabKnight", expiresInSeconds: 90, worldAccessGranted: false });
+      if (path === "/v1/characters/renew")
+        return asJson({ name: "LabKnight", expiresInSeconds: 90, worldAccessGranted: false });
+      if (path === "/v1/characters/release")
+        return new Response(null, { status: 204 });
+      throw new Error("unknown path");
+    },
+  });
+  await assert.rejects(client.reserveCharacter("LabKnight"), (e) => e.status === 401);
+  await client.login("TEST1", "dummy");
+  const lease = await client.reserveCharacter(" LabKnight ");
+  assert.deepEqual(lease, { name: "LabKnight", expiresInSeconds: 90, worldAccessGranted: false });
+  assert.deepEqual(await client.renewCharacter("LabKnight"), { expiresInSeconds: 90 });
+  await client.releaseCharacter("LabKnight");
+  assert.deepEqual(calls.map(c => c.path), [
+    "/v1/sessions", "/v1/characters/reserve", "/v1/characters/renew",
+    "/v1/characters/release",
+  ]);
+  await assert.rejects(client.reserveCharacter("   "), (e) => e.status === 400);
+  assert.equal(calls.length, 4);
+});
+
+test("another session's character lease reports conflict", async () => {
+  const client = new StormPTGatewayClient({
+    fetchImpl: async (path) =>
+      path === "/v1/sessions"
+        ? asJson({ access_token: T, token_type: "Bearer", expires_in: 900 })
+        : asJson({ error: "private" }, 409),
+  });
+  await client.login("TEST1", "dummy");
+  await assert.rejects(client.reserveCharacter("LabKnight"),
+    (error) => error.status === 409 && !error.message.includes("private"));
+});
