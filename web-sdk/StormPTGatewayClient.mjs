@@ -31,7 +31,15 @@ export class StormPTGatewayClient {
           url.origin !== globalThis.location.origin)
         throw new TypeError("Use a same-origin reverse proxy for the Web gateway.");
       this.#origin = url.origin;
-    } else this.#origin = "";
+    } else {
+      const pageLocation = globalThis.location;
+      if (pageLocation && pageLocation.protocol !== "https:" &&
+          !(pageLocation.protocol === "http:" &&
+            ["localhost", "127.0.0.1", "[::1]"].includes(pageLocation.hostname))) {
+        throw new TypeError("Web gateway login requires HTTPS outside loopback.");
+      }
+      this.#origin = "";
+    }
 
     const chosen = fetchImpl ?? globalThis.fetch;
     if (typeof chosen !== "function") throw new TypeError("fetch is unavailable");
