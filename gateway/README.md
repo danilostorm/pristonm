@@ -21,6 +21,7 @@ Ela **não** faz ponte de pacotes de jogo nem altera o servidor StormPT.
 | POST | `/v1/sessions` | Recebe `username` e `password`, consulta portal autorizado, emite Bearer |
 | GET | `/v1/me` | Retorna conta da sessão, exige Bearer |
 | GET | `/v1/characters` | Consulta personagens apenas da conta do Bearer, devolve nome, classe e nível |
+| POST | `/v1/mobile/role-list` | Recebe `application/x-protobuf` com `NFMsg.ReqRoleList`; exige Bearer; confere conta; devolve resposta REST JSON com personagens filtrados (não é um pacote nativo ACK do jogo) |
 | POST | `/v1/logout` | Revoga Bearer |
 
 ## Compilar e testar com dados fictícios
@@ -44,3 +45,6 @@ O teste sobe um portal fictício apenas em loopback, verifica login desabilitado
 - As sessões são locais e efêmeras; para produção será necessário armazenamento compartilhado, auditoria, restrições de origem, autorização mais abrangente e TLS.
 
 **Nenhuma mudança foi feita nos servidores de produção. Nenhuma porta pública foi aberta.**
+## Estado de verificação em 10/11/2026
+
+A compilação .NET 8 e os testes sintéticos de login/lista de personagens/ponte Mobile passaram no GitHub Actions; a versão foi compilada na VM do Ziel. Em loopback, o endpoint Mobile sem sessão retornou 401. O processo foi desligado após o teste. O script `tools/Test-StormPTLabIsolation.ps1` foi executado por leitura na VM LAB e retornou bloqueio: processo do jogo e portal referenciam bancos sem prefixo `MountLab_20261102_`, o portal usa DataServer padrão e a VM tem menos de 300MB disponíveis em C:. Nenhuma conta real foi testada.
