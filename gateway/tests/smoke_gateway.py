@@ -154,10 +154,10 @@ def main():
 
         gateway = start_gateway(enabled=True)
         try:
-            check(request("POST", "/v1/sessions", {"username": "TEST1", "password": "wrong"})[0] == 401,
-                  "wrong password denied")
-            check(request("POST", "/v1/sessions", {"username": "ALIAS", "password": "dummyPassword!"})[0] == 401,
-                  "mismatched identity response denied")
+            wrong_status, wrong_body, _ = request("POST", "/v1/sessions", {"username": "TEST1", "password": "wrong"})
+            check(wrong_status == 401, f"wrong password denied: got HTTP {wrong_status} / {wrong_body}")
+            alias_status, alias_body, _ = request("POST", "/v1/sessions", {"username": "ALIAS", "password": "dummyPassword!"})
+            check(alias_status == 401, f"mismatched identity response denied: HTTP {alias_status} / {alias_body}")
             status, result, headers = request("POST", "/v1/sessions",
                                               {"username": "TEST1", "password": "dummyPassword!"})
             check(status == 200 and result.get("token_type") == "Bearer", "valid mock authentication")
