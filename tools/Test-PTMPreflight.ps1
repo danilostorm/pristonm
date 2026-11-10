@@ -76,7 +76,12 @@ $startupScript = $null
 $startupScriptPresent = $null
 if(Test-Path -LiteralPath $commandLine) {
     $startupScript = ([IO.File]::ReadAllText($commandLine)).Trim()
-    if($startupScript -match '^[a-zA-Z0-9_./\\-]+
+    if($startupScript -match '^[a-zA-Z0-9_./\\-]+$') {
+        $startupScriptPresent = Test-Path -LiteralPath (Join-Path (Join-Path $root 'assets') ($startupScript.Replace('/', '\')))
+    }
+}
+$warnings = @()
+if($startupScriptPresent -eq $false) { $warnings += 'CommandLine.txt menciona script de inicializacao nao encontrado na arvore assets.' }
 if($magic -eq 'ASBC') { $warnings += 'PTGame.as e bytecode AngelScript (ASBC), nao texto-fonte editavel.' }
 if($missing.Count -gt 0) { $warnings += 'O manifesto de assinatura original referencia pacotes .pak ausentes.' }
 if($legacyHosts.Count -gt 0) { $warnings += 'SDK legado aponta para servico de terceiros. Bloquear conexao antes de testes de execucao.' }
@@ -113,45 +118,5 @@ Write-Output "PROTO_MESSAGES=$($protoNames.Count)"
 Write-Output "HAS_LOGIN=$($report.proto_has_account_login)"
 Write-Output "HAS_CHARACTER_LIST=$($report.proto_has_character_list)"
 Write-Output "STARTUP_SCRIPT_PRESENT=$($report.startup_script_present)"
-Write-Output "LEGACY_SDK_HOST_COUNT=$($legacyHosts.Count)"
-Write-Output "WARNINGS=$($warnings.Count)"
-) {
-        $startupScriptPresent = Test-Path -LiteralPath (Join-Path (Join-Path $root 'assets') ($startupScript.Replace('/', '\')))
-    }
-}
-$warnings = @()
-if($startupScriptPresent -eq $false) { $warnings += 'CommandLine.txt menciona script de inicializacao nao encontrado na arvore assets.' }
-if($magic -eq 'ASBC') { $warnings += 'PTGame.as e bytecode AngelScript (ASBC), nao texto-fonte editavel.' }
-if($missing.Count -gt 0) { $warnings += 'O manifesto de assinatura original referencia pacotes .pak ausentes.' }
-if($legacyHosts.Count -gt 0) { $warnings += 'SDK legado aponta para servico de terceiros. Bloquear conexao antes de testes de execucao.' }
-if($actualPaks.Count -eq 0) { $warnings += 'Nao ha arquivos .pak nesta arvore de assets.' }
-if(@($found.Values | Where-Object { -not $_ }).Count -gt 0) { $warnings += 'Faltam componentes Android obrigatorios.' }
-$report = [ordered]@{
-    generated_utc = [DateTime]::UtcNow.ToString('o')
-    target = 'PTM Android LAB - inventory only'
-    source_directory = $root
-    android_required_present = $found
-    ptgame_header = $magic
-    ptgame_compiled_angelscript = ($magic -eq 'ASBC')
-    original_manifest_pak_references_count = $pakRefs.Count
-    original_manifest_missing_paks_count = $missing.Count
-    original_manifest_missing_paks = $missing
-    assets_pak_files_count = $actualPaks.Count
-    proto_message_names_count = $protoNames.Count
-    proto_has_account_login = ($protoNames -contains 'ReqAccountLogin')
-    proto_has_character_list = ($protoNames -contains 'ReqRoleList')
-    old_sdk_domains = $legacyHosts
-    warnings = $warnings
-    action = 'NENHUM executavel foi iniciado; nenhum endpoint foi acessado.'
-}
-$parent = Split-Path -Parent $reportFull
-if(-not (Test-Path -LiteralPath $parent)){ New-Item -ItemType Directory -Force -Path $parent | Out-Null }
-$report | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $reportFull -Encoding UTF8
-Write-Output "REPORT=$reportFull"
-Write-Output "ANGELSCRIPT_COMPILED=$($report.ptgame_compiled_angelscript)"
-Write-Output "MISSING_PAKS=$($missing.Count)"
-Write-Output "ACTUAL_PAKS=$($actualPaks.Count)"
-Write-Output "PROTO_MESSAGES=$($protoNames.Count)"
-Write-Output "HAS_LOGIN=$($report.proto_has_account_login)"
 Write-Output "LEGACY_SDK_HOST_COUNT=$($legacyHosts.Count)"
 Write-Output "WARNINGS=$($warnings.Count)"
