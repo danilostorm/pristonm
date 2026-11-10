@@ -10,6 +10,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls("http://127.0.0.1:18878");
 builder.WebHost.ConfigureKestrel(k => k.Limits.MaxRequestBodySize = 4096);
 builder.Services.AddSingleton<LabSessions>();
+builder.Services.AddSingleton<LabCharacterLeases>();
 builder.Services.AddSingleton<LabPortalClient>();
 builder.Services.AddRateLimiter(options =>
 {
@@ -150,13 +151,87 @@ app.MapPost("/v1/mobile/role-list", async (
     };
 });
 
-app.MapPost("/v1/logout", (HttpContext ctx, LabSessions sessions) =>
+// Character reservation is only a LAB-side concurrency check. It does NOT
+// admit a player to the StormPT game world or update any inventory/save data.
+app.MapPost("/v1/characters/reserve", async (
+    CharacterReservationRequest input, HttpContext ctx, LabSessions sessions,
+    LabPortalClient portal, LabCharacterLeases leases) =>
 {
-    if (!sessions.Revoke(ctx.Request.Headers.Authorization.ToString()))
+    if (!sessions.TryRead(ctx.Request.Headers.Authorization.ToString(),
+            out var username, out var sessionKey) || username is null || sessionKey is null)
         return Results.Unauthorized();
+    var requested = input.Name?.Trim() ?? "";
+    if (requested.Length is < 1 or > 64 || requested.Any(char.IsControl))
+        return Results.BadRequest(new { error = "Invalid character name." });
+
+    // Ownership is checked against the authenticated account, never against
+    // a client-provided account/character pairing.
+    var result = await portal.GetProfileAsync(username, ctx.RequestAborted);
+    if (result.Status == LabProfileStatus.Unavailable || result.Profile is null &&
+        result.Status != LabProfileStatus.NotFound)
+        return Results.Json(new { error = "LAB character service unavailable." },
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    if (result.Status == LabProfileStatus.NotFound || result.Profile is null ||
+        !result.Profile.Characters.Any(c => string.Equals(c.Name, requested,
+            StringComparison.OrdinalIgnoreCase)))
+        return Results.NotFound();
+
+    var lease = leases.Reserve(username, requested, sessionKey);
+    return lease switch
+    {
+        LabCharacterLeases.AcquireResult.Reserved => Results.Ok(new
+        {
+            name = requested,
+            expiresInSeconds = 90,
+            worldAccessGranted = false
+        }),
+        LabCharacterLeases.AcquireResult.Conflict =>
+            Results.Conflict(new { error = "Character already reserved by another session." }),
+        _ => Results.Json(new { error = "LAB character lease capacity exceeded." },
+            statusCode: StatusCodes.Status503ServiceUnavailable)
+    };
+});
+
+app.MapPost("/v1/characters/renew", (
+    CharacterReservationRequest input, HttpContext ctx, LabSessions sessions,
+    LabCharacterLeases leases) =>
+{
+    if (!sessions.TryRead(ctx.Request.Headers.Authorization.ToString(),
+            out var username, out var sessionKey) || username is null || sessionKey is null)
+        return Results.Unauthorized();
+    var requested = input.Name?.Trim() ?? "";
+    if (requested.Length is < 1 or > 64) return Results.BadRequest();
+    return leases.Renew(username, requested, sessionKey)
+        ? Results.Ok(new { name = requested, expiresInSeconds = 90, worldAccessGranted = false })
+        : Results.Conflict(new { error = "Character lease not held by this session." });
+});
+
+app.MapPost("/v1/characters/release", (
+    CharacterReservationRequest input, HttpContext ctx, LabSessions sessions,
+    LabCharacterLeases leases) =>
+{
+    if (!sessions.TryRead(ctx.Request.Headers.Authorization.ToString(),
+            out var username, out var sessionKey) || username is null || sessionKey is null)
+        return Results.Unauthorized();
+    var requested = input.Name?.Trim() ?? "";
+    if (requested.Length is < 1 or > 64) return Results.BadRequest();
+    return leases.Release(username, requested, sessionKey)
+        ? Results.NoContent()
+        : Results.Conflict(new { error = "Character lease not held by this session." });
+});
+
+app.MapPost("/v1/logout", (
+    HttpContext ctx, LabSessions sessions, LabCharacterLeases leases) =>
+{
+    var header = ctx.Request.Headers.Authorization.ToString();
+    if (!sessions.TryRead(header, out _, out var key) || key is null ||
+        !sessions.Revoke(header))
+        return Results.Unauthorized();
+    leases.ReleaseForSession(key);
     return Results.NoContent();
 });
 
 app.Run();
 
 internal sealed record LoginInput(string? Username, string? Password);
+internal sealed record CharacterReservationRequest(string? Name);
