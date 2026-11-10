@@ -31,3 +31,6 @@ jobs:
       - name: Test local-only authentication and character isolation (no real data)
         shell: pwsh
         run: python gateway/tests/smoke_gateway.py
+      - name: Test signed world events (mock server only)
+        shell: pwsh
+        run: python gateway/tests/smoke_world_events.py

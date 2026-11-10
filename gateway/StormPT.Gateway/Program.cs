@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.RegularExpressions;
 using System.Threading.RateLimiting;
 using StormPT.Gateway;
@@ -11,6 +12,7 @@ builder.WebHost.UseUrls("http://127.0.0.1:18878");
 builder.WebHost.ConfigureKestrel(k => k.Limits.MaxRequestBodySize = 4096);
 builder.Services.AddSingleton<LabSessions>();
 builder.Services.AddSingleton<LabCharacterLeases>();
+builder.Services.AddSingleton<LabWorldEventReceiver>();
 builder.Services.AddSingleton<LabPortalClient>();
 builder.Services.AddRateLimiter(options =>
 {
@@ -37,13 +39,50 @@ app.Use(async (context, next) =>
 });
 app.UseRateLimiter();
 
-app.MapGet("/health", (LabPortalClient portal) =>
+app.MapGet("/health", (LabPortalClient portal, LabWorldEventReceiver events) =>
     Results.Ok(new
     {
         service = "StormPT LAB integration gateway",
         status = "ok",
-        realLoginConfigured = portal.Enabled
+        realLoginConfigured = portal.Enabled,
+        trustedWorldEventsConfigured = events.Enabled
     }));
+
+// The event ingest endpoint is NOT a public API and must NEVER be forwarded
+// by the Web or Mobile reverse proxy. HMAC is mandatory even for loopback.
+// It only updates ephemeral ID observations; it never grants game access.
+app.MapPost("/__lab/world-events", async (
+    HttpContext ctx, LabWorldEventReceiver receiver) =>
+{
+    if (ctx.Connection.RemoteIpAddress is null ||
+        !IPAddress.IsLoopback(ctx.Connection.RemoteIpAddress))
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+    if (!receiver.Enabled)
+        return Results.Json(new { error = "LAB world events disabled." },
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+
+    if (ctx.Request.ContentType is null ||
+        !string.Equals(ctx.Request.ContentType, "application/json",
+            StringComparison.OrdinalIgnoreCase) ||
+        ctx.Request.ContentLength > 4096)
+        return Results.BadRequest(new { error = "Invalid event content type or length." });
+
+    using var bounded = new MemoryStream(capacity: 4096);
+    // Kestrel also enforces a 4096-byte maximum for all request bodies.
+    await ctx.Request.Body.CopyToAsync(bounded, ctx.RequestAborted);
+    var outcome = receiver.VerifyAndApply(
+        ctx.Request.Headers["X-StormPT-Lab-Time"].ToString(),
+        ctx.Request.Headers["X-StormPT-Lab-Nonce"].ToString(),
+        ctx.Request.Headers["X-StormPT-Lab-Signature"].ToString(),
+        bounded.ToArray());
+
+    return outcome.Status == 204
+        ? Results.NoContent()
+        : Results.Json(new { error = outcome.Status == 401
+            ? "Invalid event authentication." : outcome.Code },
+            statusCode: outcome.Status);
+});
 
 app.MapPost("/v1/sessions", async (
     LoginInput input, HttpContext ctx, LabPortalClient portal, LabSessions sessions) =>
