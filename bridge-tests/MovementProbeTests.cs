@@ -142,6 +142,11 @@ internal static class MovementProbeTests
         Reject(() => MobileMovementProtoProbe.Decode(
             Move(1, 101, (ulong)int.MaxValue + 1)),
             "out-of-range int32 moveType");
+        Reject(() => MobileMovementProtoProbe.Decode(
+            new byte[] { 0xF8, 0xFF, 0xFF, 0xFF, 0xFF,
+                         0xFF, 0xFF, 0xFF, 0xFF, 0x01 }),
+            "oversized protobuf field number is rejected as invalid");
+
         var lots = Move(1, 101, 1);
         for (int i = 0; i < 17; i++)
             lots = lots.Concat(Nested(0x1A, position)).ToArray();
