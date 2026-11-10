@@ -9,7 +9,8 @@ namespace StormPT.MobileLab
 {
     public sealed class MobileLoginProbeResult
     {
-        public string Account { get; internal set; } = "";
+        public string Account { get; internal set; }
+        public MobileLoginProbeResult() { Account = ""; }
         public bool HasPasswordField { get; internal set; }
         public int ClientVersion { get; internal set; }
         public int ParsedFields { get; internal set; }
