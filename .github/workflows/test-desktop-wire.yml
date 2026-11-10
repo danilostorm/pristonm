@@ -1,0 +1,29 @@
+name: Desktop TCP framing - LAB offline test
+
+on:
+  push:
+    branches:
+      - lab/desktop-wire-framing-20261110
+    paths:
+      - 'bridge/DesktopWireFramer.cs'
+      - 'bridge-tests/**'
+      - '.github/workflows/test-desktop-wire.yml'
+  pull_request:
+    paths:
+      - 'bridge/DesktopWireFramer.cs'
+      - 'bridge-tests/**'
+
+permissions:
+  contents: read
+
+jobs:
+  offline-native-envelope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Compile and test native packet envelope without network
+        run: dotnet run --project bridge-tests/DesktopWireFramer.Tests.csproj -c Release
