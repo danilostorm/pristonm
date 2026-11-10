@@ -7,6 +7,6 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../DesktopWireFramer.cs" Link="DesktopWireFramer.cs" />
+    <Compile Include="../bridge/DesktopWireFramer.cs" Link="DesktopWireFramer.cs" />
   </ItemGroup>
 </Project>
