@@ -26,12 +26,32 @@ class MockPortal(BaseHTTPRequestHandler):
         pass  # Never print even test credentials.
 
     def do_POST(self):
-        size = int(self.headers.get("Content-Length", "0"))
-        if not (0 < size <= 1024):
-            return self.answer(413, {"error": "size"})
+        # HttpClient JsonContent may use RFC 9112 chunked transfer encoding.
+        # This mock accepts both framed body types; the gateway itself is unchanged.
         try:
-            data = json.loads(self.rfile.read(size))
-        except ValueError:
+            if self.headers.get("Transfer-Encoding", "").lower() == "chunked":
+                chunks = []
+                total = 0
+                while True:
+                    header = self.rfile.readline(64).split(b";", 1)[0].strip()
+                    count = int(header, 16)
+                    if count == 0:
+                        self.rfile.readline()  # final CRLF (no trailers in tests)
+                        break
+                    total += count
+                    if total > 1024:
+                        return self.answer(413, {"error": "size"})
+                    chunks.append(self.rfile.read(count))
+                    if self.rfile.read(2) != b"\r\n":
+                        return self.answer(400, {"error": "framing"})
+                raw = b"".join(chunks)
+            else:
+                size = int(self.headers.get("Content-Length", "0"))
+                if not (0 < size <= 1024):
+                    return self.answer(413, {"error": "size"})
+                raw = self.rfile.read(size)
+            data = json.loads(raw)
+        except (ValueError, TypeError):
             return self.answer(400, {"error": "json"})
 
         if self.path == "/api/login":
