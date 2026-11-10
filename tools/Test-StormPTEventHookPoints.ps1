@@ -37,7 +37,7 @@ function Check-Source([string]$Path,[string]$Pattern,[string]$Check){
 
 $checks = @(
     (Check-Source $server '(?m)^\s*DWORD\s+GetNewObjectSerial\s*\(' 'native_serial_generator'),
-    (Check-Source $server '(?m)^\s*int\s+DisconnectUser\s*\(smWINSOCK\s*\*lpsmSock\)' 'socket_disconnect_handler'),
+    (Check-Source $server '(?m)^\s*int\s+DisconnectUser\s*\(smWINSOCK\s*\*lpsmSock\)\s*\{' 'socket_disconnect_handler'),
     (Check-Source $server 'tpInfo->getAccount\(\)\.c_str\(\)' 'server_account_field_present'),
     (Check-Source $server 'tpInfo->getName\(\)\.c_str\(\)' 'server_character_field_present'),
     (Check-Source $server 'lpsmSock->ExtData1' 'server_session_socket_binding'),
