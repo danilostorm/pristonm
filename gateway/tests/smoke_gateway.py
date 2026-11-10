@@ -83,9 +83,12 @@ class MockPortal(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
 
-def request(method, path, payload=None, bearer=None):
-    body = None if payload is None else json.dumps(payload).encode()
-    headers = {"Content-Type": "application/json"} if payload is not None else {}
+def request(method, path, payload=None, bearer=None, binary=None):
+    if binary is not None and payload is not None:
+        raise ValueError("Cannot send JSON and binary simultaneously.")
+    body = binary if binary is not None else (None if payload is None else json.dumps(payload).encode())
+    headers = ({"Content-Type": "application/x-protobuf"} if binary is not None else
+               ({"Content-Type": "application/json"} if payload is not None else {}))
     if bearer is not None:
         headers["Authorization"] = f"Bearer {bearer}"
     req = Request(BASE + path, data=body, headers=headers, method=method)
@@ -194,6 +197,22 @@ def main():
             check("privateData" not in characters and "internalValue" not in characters["characters"][0],
                   "upstream private fields filtered")
             check(request("GET", "/v1/characters")[0] == 401, "characters still private")
+
+            # NFMsg.ReqRoleList: game_id=1, account=TEST1 (fictitious).
+            role_request = bytes([0x08, 0x01, 0x12, 0x05]) + b"TEST1"
+            status, mobile, _ = request(
+                "POST", "/v1/mobile/role-list", bearer=token, binary=role_request)
+            check(status == 200 and mobile["protocol"] == "NFMsg.ReqRoleList" and
+                  mobile["username"] == "TEST1" and
+                  mobile["characters"][0]["name"] == "LabKnight",
+                  "Mobile role-list message mapped to session-owned characters")
+            check(request("POST", "/v1/mobile/role-list", binary=role_request)[0] == 401,
+                  "Mobile role-list requires authentication")
+            wrong_owner = bytes([0x08, 0x01, 0x12, 0x05]) + b"OTHER"
+            check(request("POST", "/v1/mobile/role-list", bearer=token, binary=wrong_owner)[0] == 403,
+                  "Mobile cannot claim another account")
+            check(request("POST", "/v1/mobile/role-list", bearer=token, binary=b"\x08\x01")[0] == 400,
+                  "Malformed Mobile role-list rejected")
             check(request("POST", "/v1/logout", bearer=token)[0] == 204, "session revoked")
             check(request("GET", "/v1/me", bearer=token)[0] == 401, "revoked token rejected")
         finally:
@@ -203,6 +222,7 @@ def main():
         mock.server_close()
     print("PASS: gateway disabled-by-default; unauthorized access denied")
     print("PASS: mock-only credentials; session issuance; profile isolation and field filtering")
+    print("PASS: authenticated NFMsg role-list mapping; mismatched account denied")
     print("PASS: bearer revocation; upstream username mismatch blocked; localhost only")
 
 
