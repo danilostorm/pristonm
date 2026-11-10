@@ -345,6 +345,45 @@ static class Test
               "restart cannot reuse the same epoch");
         Throws<ArgumentException>(() => new LabIdentityCrosswalk(Guid.Empty),
               "server epoch must not be empty");
+        Check(worldIds.BindVerified(new LabEntityBinding(
+            "A".PadRight(33, 'A'), "LabKnight", "s-oversized",
+            new NativeRuntimeEntity(boot2, 0x10003000),
+            new MobileRuntimeEntity(1, 550))) == BindOutcome.Invalid,
+            "oversized account identifier rejected");
+        Check(worldIds.BindVerified(new LabEntityBinding(
+            "TEST1", "LabKnight", new string('s', 129),
+            new NativeRuntimeEntity(boot2, 0x10003000),
+            new MobileRuntimeEntity(1, 550))) == BindOutcome.Invalid,
+            "oversized session key rejected");
+        Check(worldIds.BindVerified(new LabEntityBinding(
+            "TEST1", "Bad\nCharacter", "s-control",
+            new NativeRuntimeEntity(boot2, 0x10003000),
+            new MobileRuntimeEntity(1, 550))) == BindOutcome.Invalid,
+            "character with control characters rejected");
+
+        // Finite resource budget: prevent unbounded growth from future
+        // trusted event streams. No real accounts or characters used.
+        var capacityEpoch = Guid.NewGuid();
+        var capacityWalk = new LabIdentityCrosswalk(capacityEpoch);
+        for (int i = 0; i < LabIdentityCrosswalk.MaxBindings; i++)
+        {
+            var synthetic = new LabEntityBinding(
+                "TEST1", "LabKnight" + i, "synthetic-session-" + i,
+                new NativeRuntimeEntity(capacityEpoch, (uint)(0x10002000 + i)),
+                new MobileRuntimeEntity(1, i + 1));
+            if (capacityWalk.BindVerified(synthetic) != BindOutcome.Created)
+                throw new Exception("FAILED: registry must accept bounded fake mappings.");
+        }
+        Check(capacityWalk.BoundCount == LabIdentityCrosswalk.MaxBindings,
+              "bounded identity registry admits exactly its capacity");
+        Check(capacityWalk.BindVerified(new LabEntityBinding(
+            "TEST1", "Extra", "synthetic-over-limit",
+            new NativeRuntimeEntity(capacityEpoch, 0x10008000),
+            new MobileRuntimeEntity(1, 5000))) == BindOutcome.CapacityExceeded,
+            "identity crosswalk rejects overflow instead of growing indefinitely");
+        Check(capacityWalk.BoundCount == LabIdentityCrosswalk.MaxBindings,
+              "capacity failure preserves existing session bindings");
+
 
         passed += MovementProbeTests.Run();
         Console.WriteLine($"PASS: {passed} Desktop/Mobile protocol, position and runtime identity assertions.");
