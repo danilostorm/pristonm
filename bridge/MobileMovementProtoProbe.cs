@@ -44,7 +44,9 @@ internal static class MobileMovementProtoProbe
             if (++fields > MaxFieldCount)
                 throw new FormatException("Excessive movement fields.");
             ulong tag = ReadVarint(packet, ref offset);
-            int field = checked((int)(tag >> 3));
+            if (tag >> 3 > int.MaxValue)
+                throw new FormatException("Protobuf field number overflow.");
+            int field = (int)(tag >> 3);
             int wire = (int)(tag & 7);
             if (field == 0) throw new FormatException("Invalid field number.");
 
