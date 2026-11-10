@@ -48,3 +48,20 @@ O teste sobe um portal fictício apenas em loopback, verifica login desabilitado
 ## Estado de verificação em 10/11/2026
 
 A compilação .NET 8 e os testes sintéticos de login/lista de personagens/ponte Mobile passaram no GitHub Actions; a versão foi compilada na VM do Ziel. Em loopback, o endpoint Mobile sem sessão retornou 401. O processo foi desligado após o teste. O script `tools/Test-StormPTLabIsolation.ps1` foi executado por leitura na VM LAB e retornou bloqueio: processo do jogo e portal referenciam bancos sem prefixo `MountLab_20261102_`, o portal usa DataServer padrão e a VM tem menos de 300MB disponíveis em C:. Nenhuma conta real foi testada.
+
+
+## Reserva exclusiva de personagens (prova de conceito)
+
+O Gateway implementa três novas rotas, todas exigindo Bearer válido:
+
+| Método | Caminho | Função |
+|---|---|---|
+| POST | `/v1/characters/reserve` | Valida o personagem na lista autorizada da conta e cria uma reserva de **90 segundos** |
+| POST | `/v1/characters/renew` | Renova a reserva somente pelo dono da sessão |
+| POST | `/v1/characters/release` | Libera a reserva somente pelo dono da sessão |
+
+Corpo: `{"name":"PERSONAGEM_DE_LAB"}`. A segunda sessão que tenta reservar o mesmo personagem recebe **HTTP 409**; a reserva é liberada na saída da sessão e expira sem renovação. Para o protótipo, uma mesma sessão não reserva mais de um personagem simultaneamente.
+
+**ATENÇÃO:** a resposta inclui `"worldAccessGranted":false`. A reserva é uma estrutura **local e efêmera** de prevenção de conflito entre Web e Mobile, não um login no servidor do jogo. Não controla o cliente Desktop, não bloqueia escrita no servidor `Server33.exe` e não deve ser usada isoladamente em produção distribuída.
+
+Os testes do GitHub Actions cobrem duas sessões com uma mesma conta, conflito de reservas, renovação, liberação, logout e tentativa de reservar personagens não pertencentes à sessão.
