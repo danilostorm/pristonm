@@ -1,0 +1,33 @@
+name: StormPT gateway - isolated lab smoke tests
+
+on:
+  push:
+    paths:
+      - 'gateway/**'
+      - '.github/workflows/test-gateway.yml'
+  pull_request:
+    paths:
+      - 'gateway/**'
+      - '.github/workflows/test-gateway.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-authentication-smoke:
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build gateway with warnings as errors
+        shell: pwsh
+        run: dotnet build gateway/StormPT.Gateway/StormPT.Gateway.csproj --configuration Release
+      - name: Test local-only authentication and character isolation (no real data)
+        shell: pwsh
+        run: python gateway/tests/smoke_gateway.py
