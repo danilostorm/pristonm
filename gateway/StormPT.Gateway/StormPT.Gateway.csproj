@@ -7,4 +7,8 @@
     <AssemblyName>StormPT.Gateway</AssemblyName>
     <RootNamespace>StormPT.Gateway</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\bridge\MobileLoginProbe.cs" Link="MobileBridge\MobileLoginProbe.cs" />
+    <Compile Include="..\..\bridge\MobileRoleListProbe.cs" Link="MobileBridge\MobileRoleListProbe.cs" />
+  </ItemGroup>
 </Project>
