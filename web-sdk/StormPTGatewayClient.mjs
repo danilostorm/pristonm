@@ -84,6 +84,7 @@ export class StormPTGatewayClient {
       const status = Number.isInteger(reply.status) ? reply.status : 0;
       const message = status === 401 ? "Session invalid or expired." :
         status === 429 ? "Too many attempts." :
+        status === 409 ? "Character reserved by another session." :
         status === 503 ? "LAB service unavailable." : "Request failed.";
       throw new StormPTGatewayError(message, status);
     }
@@ -137,6 +138,54 @@ export class StormPTGatewayClient {
         className: ch.className, level: ch.level };
     });
     return { username: data.username, characters };
+  }
+
+  /**
+   * Reserve an owned character for this browser session. The game world is NOT
+   * entered: this is only a 90-second LAB lease that must be renewed or released.
+   */
+  async reserveCharacter(name, { signal } = {}) {
+    const wanted = this.#validateCharacterName(name);
+    const data = await this.#request("/v1/characters/reserve", {
+      method: "POST", json: { name: wanted }, authorized: true, signal,
+    });
+    if (!data || typeof data.name !== "string" ||
+        data.name.toLowerCase() !== wanted.toLowerCase() ||
+        !Number.isInteger(data.expiresInSeconds) ||
+        data.expiresInSeconds < 1 || data.expiresInSeconds > 90 ||
+        data.worldAccessGranted !== false) {
+      throw new StormPTGatewayError("Invalid character reservation response.", 502);
+    }
+    return { name: data.name, expiresInSeconds: data.expiresInSeconds,
+      worldAccessGranted: false };
+  }
+
+  async renewCharacter(name, { signal } = {}) {
+    const wanted = this.#validateCharacterName(name);
+    const data = await this.#request("/v1/characters/renew", {
+      method: "POST", json: { name: wanted }, authorized: true, signal,
+    });
+    if (!data || data.worldAccessGranted !== false ||
+        !Number.isInteger(data.expiresInSeconds) ||
+        data.expiresInSeconds < 1 || data.expiresInSeconds > 90) {
+      throw new StormPTGatewayError("Invalid character lease response.", 502);
+    }
+    return { expiresInSeconds: data.expiresInSeconds };
+  }
+
+  async releaseCharacter(name, { signal } = {}) {
+    const wanted = this.#validateCharacterName(name);
+    await this.#request("/v1/characters/release", {
+      method: "POST", json: { name: wanted }, authorized: true, signal,
+    });
+  }
+
+  #validateCharacterName(name) {
+    if (typeof name !== "string") throw new StormPTGatewayError("Invalid character name.", 400);
+    const wanted = name.trim();
+    if (!wanted || wanted.length > 64 || /[\x00-\x1f\x7f]/.test(wanted))
+      throw new StormPTGatewayError("Invalid character name.", 400);
+    return wanted;
   }
 
   async logout({ signal } = {}) {
