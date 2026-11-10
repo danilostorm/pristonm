@@ -1,0 +1,30 @@
+name: PTM bridge - offline protocol probes
+
+on:
+  push:
+    paths:
+      - 'bridge/**'
+      - 'tests/**'
+      - '.github/workflows/test-bridge.yml'
+  pull_request:
+    paths:
+      - 'bridge/**'
+      - 'tests/**'
+      - '.github/workflows/test-bridge.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-protobuf-envelopes:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Test login envelope
+        shell: powershell
+        run: .\tests\Test-MobileLoginProbe.ps1
+      - name: Test role list envelope
+        shell: powershell
+        run: .\tests\Test-MobileRoleListProbe.ps1
