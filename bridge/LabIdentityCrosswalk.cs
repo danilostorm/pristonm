@@ -18,10 +18,11 @@ internal sealed record LabEntityBinding(
     string Account, string Character, string SessionKey,
     NativeRuntimeEntity Native, MobileRuntimeEntity Mobile);
 
-internal enum BindOutcome { Created, AlreadyBound, Conflict, Invalid }
+internal enum BindOutcome { Created, AlreadyBound, Conflict, Invalid, CapacityExceeded }
 
 internal sealed class LabIdentityCrosswalk
 {
+    internal const int MaxBindings = 1024;
     private readonly object _sync = new();
     private Guid _serverEpoch;
     private readonly Dictionary<uint, LabEntityBinding> _byNative = new();
@@ -44,7 +45,12 @@ internal sealed class LabIdentityCrosswalk
             binding.Mobile.Index <= 0 ||
             string.IsNullOrWhiteSpace(binding.SessionKey) ||
             string.IsNullOrWhiteSpace(binding.Account) ||
-            string.IsNullOrWhiteSpace(binding.Character))
+            string.IsNullOrWhiteSpace(binding.Character) ||
+            binding.Account.Length > 32 || binding.Character.Length > 64 ||
+            binding.SessionKey.Length > 128 ||
+            binding.Character.Any(char.IsControl) ||
+            binding.Account.Any(char.IsControl) ||
+            binding.SessionKey.Any(char.IsControl))
             return BindOutcome.Invalid;
 
         lock (_sync)
@@ -60,6 +66,9 @@ internal sealed class LabIdentityCrosswalk
                 return (native == binding && mobile == binding && session == binding)
                     ? BindOutcome.AlreadyBound
                     : BindOutcome.Conflict;
+
+            if (_bySession.Count >= MaxBindings)
+                return BindOutcome.CapacityExceeded;
 
             _byNative.Add(binding.Native.ObjectSerial, binding);
             _byMobile.Add(binding.Mobile, binding);
