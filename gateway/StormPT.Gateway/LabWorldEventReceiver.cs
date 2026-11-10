@@ -102,11 +102,9 @@ internal sealed class LabWorldEventReceiver
         Buffer.BlockCopy(prefix, 0, signed, 0, prefix.Length);
         Buffer.BlockCopy(body, 0, signed, prefix.Length, body.Length);
         var expected = HMACSHA256.HashData(_secret, signed);
-        if (!Convert.TryFromHexString(macHex, new byte[32], out int written) ||
-            written != 32)
-            return new(401, "not_authenticated");
-
-        var provided = Convert.FromHexString(macHex);
+        byte[] provided;
+        try { provided = Convert.FromHexString(macHex); }
+        catch (FormatException) { return new(401, "not_authenticated"); }
         if (!CryptographicOperations.FixedTimeEquals(expected, provided))
             return new(401, "not_authenticated");
 
