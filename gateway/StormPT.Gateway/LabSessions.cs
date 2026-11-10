@@ -40,8 +40,12 @@ internal sealed class LabSessions
     }
 
     internal bool TryRead(string? authorizationHeader, out string? username)
+        => TryRead(authorizationHeader, out username, out _);
+
+    internal bool TryRead(string? authorizationHeader, out string? username, out string? sessionKey)
     {
         username = null;
+        sessionKey = null;
         if (authorizationHeader is null ||
             !authorizationHeader.StartsWith("Bearer ", StringComparison.Ordinal) ||
             authorizationHeader.Length != 50) // 7 prefix + 43 random base64url chars.
@@ -60,6 +64,7 @@ internal sealed class LabSessions
             return false;
         }
         username = session.Username;
+        sessionKey = key;
         return true;
     }
 
