@@ -9,5 +9,6 @@
   <ItemGroup>
     <Compile Include="../bridge/DesktopWireFramer.cs" Link="DesktopWireFramer.cs" />
     <Compile Include="../bridge/DesktopPositionDecoder.cs" Link="DesktopPositionDecoder.cs" />
+    <Compile Include="../bridge/MobilePositionProtoCodec.cs" Link="MobilePositionProtoCodec.cs" />
   </ItemGroup>
 </Project>
