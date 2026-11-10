@@ -213,6 +213,39 @@ def main():
                   "Mobile cannot claim another account")
             check(request("POST", "/v1/mobile/role-list", bearer=token, binary=b"\x08\x01")[0] == 400,
                   "Malformed Mobile role-list rejected")
+            # Concurrency control: two authenticated clients, same account/character.
+            # These are mock sessions; the real game server is NEVER contacted.
+            endpoint = "/v1/characters/reserve"
+            reserve_body = {"name": "LabKnight"}
+            check(request("POST", endpoint, reserve_body)[0] == 401,
+                  "anonymous character reservation denied")
+            check(request("POST", endpoint, {"name": "NotOwned"}, bearer=token)[0] == 404,
+                  "cannot reserve someone else's character")
+            status, lease, _ = request("POST", endpoint, reserve_body, bearer=token)
+            check(status == 200 and lease["worldAccessGranted"] is False and
+                  lease["expiresInSeconds"] == 90,
+                  "reservation granted but not admission to the game")
+            status, second_login, _ = request("POST", "/v1/sessions",
+                                               {"username": "TEST1", "password": "dummyPassword!"})
+            check(status == 200, "second test session permitted")
+            second = second_login["access_token"]
+            check(token != second, "sessions must have distinct secrets")
+            check(request("POST", endpoint, reserve_body, bearer=second)[0] == 409,
+                  "parallel login cannot take over a reserved character")
+            check(request("POST", "/v1/characters/renew", reserve_body, bearer=second)[0] == 409,
+                  "second session cannot renew another session's lease")
+            check(request("POST", "/v1/characters/renew", reserve_body, bearer=token)[0] == 200,
+                  "lease owner can renew")
+            check(request("POST", "/v1/characters/release", reserve_body, bearer=token)[0] == 204,
+                  "lease owner can release")
+            check(request("POST", endpoint, reserve_body, bearer=second)[0] == 200,
+                  "second session may reserve after release")
+            check(request("POST", endpoint, reserve_body, bearer=token)[0] == 409,
+                  "first session blocked while second owns character")
+            check(request("POST", "/v1/logout", bearer=second)[0] == 204,
+                  "second session logout releases lease")
+            check(request("POST", endpoint, reserve_body, bearer=token)[0] == 200,
+                  "first session can reserve again after second logout")
             check(request("POST", "/v1/logout", bearer=token)[0] == 204, "session revoked")
             check(request("GET", "/v1/me", bearer=token)[0] == 401, "revoked token rejected")
         finally:
@@ -223,6 +256,7 @@ def main():
     print("PASS: gateway disabled-by-default; unauthorized access denied")
     print("PASS: mock-only credentials; session issuance; profile isolation and field filtering")
     print("PASS: authenticated NFMsg role-list mapping; mismatched account denied")
+    print("PASS: exclusive character lease: second session 409, release and logout free lease")
     print("PASS: bearer revocation; upstream username mismatch blocked; localhost only")
 
 
