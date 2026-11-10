@@ -24,7 +24,7 @@ function Get-Fields([string]$MessageName){
 }
 function Assert-Field($fields,[string]$name,[int]$number,[string]$message){
     if(-not $fields.ContainsKey($name) -or $fields[$name] -ne $number){
-        throw "Schema divergente $message.$name: esperado $number"
+        throw "Schema divergente ${message}.${name}: esperado $number"
     }
 }
 $login=Get-Fields 'ReqAccountLogin'
