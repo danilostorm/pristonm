@@ -10,5 +10,6 @@
     <Compile Include="../bridge/DesktopWireFramer.cs" Link="DesktopWireFramer.cs" />
     <Compile Include="../bridge/DesktopPositionDecoder.cs" Link="DesktopPositionDecoder.cs" />
     <Compile Include="../bridge/MobilePositionProtoCodec.cs" Link="MobilePositionProtoCodec.cs" />
+    <Compile Include="../bridge/LabIdentityCrosswalk.cs" Link="LabIdentityCrosswalk.cs" />
   </ItemGroup>
 </Project>
