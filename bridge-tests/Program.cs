@@ -183,6 +183,70 @@ static class Test
               .All(p => p.Name != "Authenticated" && p.Name != "Authorized"),
               "movement observation cannot represent session authorization");
 
+        // NFMsgBase.proto Position: float x=1, y=2, z=3 (wire type fixed32).
+        // This is numeric mapping only, not an authenticated movement command.
+        var encoded = MobilePositionProtoCodec.EncodeFromDesktop(movement);
+        Check(encoded.Length == MobilePositionProtoCodec.ProtoPayloadBytes &&
+              encoded[0] == 0x0D && encoded[5] == 0x15 && encoded[10] == 0x1D,
+              "three required protobuf Position fields use fixed32 wire type");
+
+        var mobile = MobilePositionProtoCodec.Decode(encoded);
+        Check(mobile.X == 5.0f && mobile.Y == -3.0f && mobile.Z == 0.5f,
+              "native fixed-point values map to Mobile float32 xyz");
+
+        // Protobuf fields are unordered: reordered fields must decode identically.
+        var permuted = encoded.AsSpan(10, 5).ToArray()
+            .Concat(encoded.AsSpan(0, 5).ToArray())
+            .Concat(encoded.AsSpan(5, 5).ToArray()).ToArray();
+        Check(MobilePositionProtoCodec.Decode(permuted) == mobile,
+              "protobuf Position field order independence");
+
+        var fromFloat = MobilePositionProtoCodec.Encode(
+            new MobilePositionSample(-1.25f, 2.5f, 0));
+        Check(MobilePositionProtoCodec.Decode(fromFloat) ==
+              new MobilePositionSample(-1.25f, 2.5f, 0f),
+              "Mobile float32 encode decode");
+
+        Throws<FormatException>(() => MobilePositionProtoCodec.Decode(encoded.AsSpan(0, 14)),
+              "truncated Mobile Position rejected");
+
+        var duplicatedField = (byte[])encoded.Clone();
+        duplicatedField[5] = 0x0D;
+        Throws<FormatException>(() => MobilePositionProtoCodec.Decode(duplicatedField),
+              "duplicate protobuf field rejected");
+
+        var wrongWireType = (byte[])encoded.Clone();
+        wrongWireType[10] = 0x1A;
+        Throws<FormatException>(() => MobilePositionProtoCodec.Decode(wrongWireType),
+              "incorrect protobuf float wire type rejected");
+
+        var infinity = (byte[])encoded.Clone();
+        BinaryPrimitives.WriteInt32LittleEndian(infinity.AsSpan(1, 4),
+            BitConverter.SingleToInt32Bits(float.PositiveInfinity));
+        Throws<FormatException>(() => MobilePositionProtoCodec.Decode(infinity),
+              "infinite Mobile coordinates rejected");
+
+        var nan = (byte[])encoded.Clone();
+        BinaryPrimitives.WriteInt32LittleEndian(nan.AsSpan(6, 4),
+            BitConverter.SingleToInt32Bits(float.NaN));
+        Throws<FormatException>(() => MobilePositionProtoCodec.Decode(nan),
+              "NaN Mobile coordinates rejected");
+
+        Throws<FormatException>(() =>
+            MobilePositionProtoCodec.Encode(new MobilePositionSample(0, float.NaN, 1)),
+            "NaN coordinates cannot be encoded");
+
+        // At large world coordinates, float32 may lose a fraction of the native
+        // fixed-point resolution. Test checks a bounded conversion error only,
+        // not in-game coordinate calibration.
+        var largeCoord = DesktopPositionDecoder.Decode(
+            Position(0, int.MaxValue, int.MinValue, 256, 1, 1));
+        var largeRoundTrip = MobilePositionProtoCodec.Decode(
+            MobilePositionProtoCodec.EncodeFromDesktop(largeCoord));
+        Check(Math.Abs((double)largeRoundTrip.X - largeCoord.X) <= 0.5 &&
+              Math.Abs((double)largeRoundTrip.Y - largeCoord.Y) <= 0.5,
+              "float32 rounding at extreme fixed-point values remains bounded");
+
         Console.WriteLine($"PASS: {passed} Desktop protocol framing and position assertions.");
         Console.WriteLine("PASS: no network, no player credentials, no server modification.");
         Console.WriteLine("NOTE: packet opcode handlers, encryption and world state are NOT implemented.");
