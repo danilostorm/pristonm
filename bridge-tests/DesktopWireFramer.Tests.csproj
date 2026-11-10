@@ -8,5 +8,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../bridge/DesktopWireFramer.cs" Link="DesktopWireFramer.cs" />
+    <Compile Include="../bridge/DesktopPositionDecoder.cs" Link="DesktopPositionDecoder.cs" />
   </ItemGroup>
 </Project>
