@@ -85,7 +85,7 @@ namespace StormPT.MobileLab
             };
         }
 
-        private static ulong ReadVarint(byte[] data, ref int pos)
+        internal static ulong ReadVarint(byte[] data, ref int pos)
         {
             ulong result = 0;
             for (int i = 0; i < 10; i++)
@@ -99,7 +99,7 @@ namespace StormPT.MobileLab
             throw new FormatException("Varint too long.");
         }
 
-        private static void ReadLengthDelimited(byte[] data, ref int pos, out int start, out int length)
+        internal static void ReadLengthDelimited(byte[] data, ref int pos, out int start, out int length)
         {
             ulong value = ReadVarint(data, ref pos);
             if (value > (ulong)(data.Length - pos)) throw new FormatException("Truncated payload.");
@@ -109,7 +109,7 @@ namespace StormPT.MobileLab
             pos += length;
         }
 
-        private static void SkipValue(byte[] data, ref int pos, int wire)
+        internal static void SkipValue(byte[] data, ref int pos, int wire)
         {
             switch (wire)
             {
