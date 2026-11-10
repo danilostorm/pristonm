@@ -1,0 +1,23 @@
+# Arquivos grandes e materiais de terceiros: manter fora do repositório
+*.rar
+*.7z
+*.zip
+*.pak
+*.apk
+*.ipa
+*.exe
+*.dll
+*.so
+*.iso
+*.img
+
+# Áreas de análise locais
+/extracted/
+/client-extracted/
+/downloads/
+/reports/*.list.txt
+/reports/*.log
+*.tmp
+*.bak
+Thumbs.db
+Desktop.ini
