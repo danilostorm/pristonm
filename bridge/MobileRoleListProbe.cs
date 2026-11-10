@@ -9,7 +9,7 @@ namespace StormPT.MobileLab
     public sealed class MobileRoleListProbeResult
     {
         public int GameId { get; internal set; }
-        public string ClaimedAccount { get; internal set; }
+        public string ClaimedAccount { get; internal set; } = "";
         public bool HasAccountType { get; internal set; }
     }
 
@@ -23,7 +23,7 @@ namespace StormPT.MobileLab
             int pos = 0;
             bool hasGame = false, hasAccount = false, hasAccountType = false;
             int game = 0;
-            string account = null;
+            string account = "";
             int fieldCount = 0;
             while (pos < data.Length)
             {
