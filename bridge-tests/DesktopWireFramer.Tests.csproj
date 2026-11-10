@@ -11,5 +11,6 @@
     <Compile Include="../bridge/DesktopPositionDecoder.cs" Link="DesktopPositionDecoder.cs" />
     <Compile Include="../bridge/MobilePositionProtoCodec.cs" Link="MobilePositionProtoCodec.cs" />
     <Compile Include="../bridge/LabIdentityCrosswalk.cs" Link="LabIdentityCrosswalk.cs" />
+    <Compile Include="../bridge/MobileMovementProtoProbe.cs" Link="MobileMovementProtoProbe.cs" />
   </ItemGroup>
 </Project>
