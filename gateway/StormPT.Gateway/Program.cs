@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using System.Threading.RateLimiting;
 using StormPT.Gateway;
+using StormPT.MobileLab;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -95,6 +96,54 @@ app.MapGet("/v1/characters", async (
     {
         LabProfileStatus.Ok when result.Profile is not null =>
             Results.Ok(result.Profile),
+        LabProfileStatus.NotFound => Results.NotFound(),
+        _ => Results.Json(new { error = "LAB character service unavailable." },
+            statusCode: StatusCodes.Status503ServiceUnavailable)
+    };
+});
+
+// First real adapter step: an authenticated Mobile Protobuf request can be
+// inspected and mapped to a read-only gateway character-list response.
+// This is NOT the original PTM TCP framing or a native Protobuf ACK serializer.
+app.MapPost("/v1/mobile/role-list", async (
+    HttpContext ctx, LabSessions sessions, LabPortalClient portal) =>
+{
+    if (!sessions.TryRead(ctx.Request.Headers.Authorization.ToString(), out var username) ||
+        username is null)
+        return Results.Unauthorized();
+
+    if (ctx.Request.ContentType is null ||
+        !ctx.Request.ContentType.StartsWith("application/x-protobuf", StringComparison.OrdinalIgnoreCase) ||
+        ctx.Request.ContentLength > 4096)
+        return Results.BadRequest(new { error = "Invalid Mobile message type or size." });
+
+    using var body = new MemoryStream(capacity: 4096);
+    await ctx.Request.Body.CopyToAsync(body, ctx.RequestAborted);
+    var payload = body.ToArray();
+    MobileRoleListProbeResult parsed;
+    try
+    {
+        parsed = MobileRoleListProbe.Inspect(payload);
+    }
+    catch (Exception ex) when (ex is ArgumentException or FormatException or OverflowException)
+    {
+        return Results.BadRequest(new { error = "Malformed NFMsg.ReqRoleList." });
+    }
+
+    // Client-supplied account is only a claim, never proof of identity.
+    if (!string.Equals(parsed.ClaimedAccount, username, StringComparison.OrdinalIgnoreCase))
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+    var result = await portal.GetProfileAsync(username, ctx.RequestAborted);
+    return result.Status switch
+    {
+        LabProfileStatus.Ok when result.Profile is not null => Results.Ok(new
+        {
+            protocol = "NFMsg.ReqRoleList",
+            gameId = parsed.GameId,
+            username,
+            characters = result.Profile.Characters
+        }),
         LabProfileStatus.NotFound => Results.NotFound(),
         _ => Results.Json(new { error = "LAB character service unavailable." },
             statusCode: StatusCodes.Status503ServiceUnavailable)
