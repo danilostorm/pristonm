@@ -22,7 +22,7 @@ internal sealed class LabPortalClient : IDisposable
     private readonly Uri? _origin;
     internal bool Enabled => _client is not null;
 
-    internal LabPortalClient()
+    public LabPortalClient()
     {
         if (Environment.GetEnvironmentVariable("STORMPT_GATEWAY_ENABLE_LAB_AUTH") != "1")
             return;
