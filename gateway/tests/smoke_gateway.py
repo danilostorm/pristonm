@@ -10,12 +10,13 @@ import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.request import Request, urlopen
+from urllib.request import Request, ProxyHandler, build_opener
 from urllib.error import HTTPError, URLError
 
 PORT = 18878
 MOCK_PORT = 18879
 BASE = f"http://127.0.0.1:{PORT}"
+OPENER = build_opener(ProxyHandler({}))  # Never route localhost tests through CI proxies.
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DLL = PROJECT_ROOT / "StormPT.Gateway" / "bin" / "Release" / "net8.0" / "StormPT.Gateway.dll"
 
@@ -69,7 +70,7 @@ def request(method, path, payload=None, bearer=None):
         headers["Authorization"] = f"Bearer {bearer}"
     req = Request(BASE + path, data=body, headers=headers, method=method)
     try:
-        with urlopen(req, timeout=3) as response:
+        with OPENER.open(req, timeout=3) as response:
             return response.status, json.loads(response.read() or b"{}"), dict(response.headers)
     except HTTPError as e:
         content = e.read()
@@ -77,7 +78,7 @@ def request(method, path, payload=None, bearer=None):
 
 
 def wait_for_server(proc):
-    for _ in range(100):
+    for _ in range(200):
         if proc.poll() is not None:
             raise RuntimeError(f"Gateway exited before becoming ready: {proc.returncode}")
         try:
@@ -86,8 +87,8 @@ def wait_for_server(proc):
                 return
         except (URLError, TimeoutError, ConnectionResetError):
             pass
-        time.sleep(0.1)
-    raise RuntimeError("Gateway was not ready after 10 seconds")
+        time.sleep(0.15)
+    raise RuntimeError("Gateway was not ready after 30 seconds; check bound port and process output")
 
 
 def start_gateway(enabled):
@@ -101,10 +102,21 @@ def start_gateway(enabled):
         ["dotnet", str(DLL)],
         cwd=str(PROJECT_ROOT),
         env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
     )
-    wait_for_server(proc)
+    try:
+        wait_for_server(proc)
+    except Exception:
+        proc.terminate()
+        try:
+            output, _ = proc.communicate(timeout=4)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            output, _ = proc.communicate(timeout=4)
+        # Only server startup diagnostics; no real user credentials are in this test.
+        print((output or b"").decode(errors="replace")[-4000:], file=sys.stderr)
+        raise
     return proc
 
 
