@@ -346,7 +346,8 @@ static class Test
         Throws<ArgumentException>(() => new LabIdentityCrosswalk(Guid.Empty),
               "server epoch must not be empty");
 
-        Console.WriteLine($"PASS: {passed} Desktop protocol, position and runtime identity assertions.");
+        passed += MovementProbeTests.Run();
+        Console.WriteLine($"PASS: {passed} Desktop/Mobile protocol, position and runtime identity assertions.");
         Console.WriteLine("PASS: no network, no player credentials, no server modification.");
         Console.WriteLine("NOTE: packet opcode handlers, encryption and world state are NOT implemented.");
         return 0;
