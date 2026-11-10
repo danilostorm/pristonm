@@ -247,7 +247,106 @@ static class Test
               Math.Abs((double)largeRoundTrip.Y - largeCoord.Y) <= 0.5,
               "float32 rounding at extreme fixed-point values remains bounded");
 
-        Console.WriteLine($"PASS: {passed} Desktop protocol framing and position assertions.");
+        // Native dwObjectSerial is a server-generated transient entity serial,
+        // not a permanent character ID. NFMsg.Ident(svrid,index) is a separate
+        // namespace: only server-confirmed events can establish an association.
+        var boot1 = Guid.NewGuid();
+        var boot2 = Guid.NewGuid();
+        var worldIds = new LabIdentityCrosswalk(boot1);
+        var alice = new LabEntityBinding(
+            "TEST1", "LabKnight", "session-A",
+            new NativeRuntimeEntity(boot1, 0x10002000),
+            new MobileRuntimeEntity(1, 101));
+        var bob = new LabEntityBinding(
+            "TEST2", "LabArcher", "session-B",
+            new NativeRuntimeEntity(boot1, 0x10002001),
+            new MobileRuntimeEntity(1, 102));
+
+        Check(worldIds.BoundCount == 0, "crosswalk starts empty");
+        Check(worldIds.BindVerified(alice) == BindOutcome.Created,
+              "trusted server mapping created");
+        Check(worldIds.BindVerified(alice) == BindOutcome.AlreadyBound,
+              "repeated same trusted mapping is idempotent");
+        Check(worldIds.BindVerified(bob) == BindOutcome.Created,
+              "second unrelated player maps independently");
+        Check(worldIds.BoundCount == 2, "two distinct verified sessions bound");
+
+        Check(worldIds.TryResolveNative(boot1, "session-A", 0x10002000, out var aliceMobile) &&
+              aliceMobile == new MobileRuntimeEntity(1, 101),
+              "native serial resolves with authentic session and server boot");
+        Check(worldIds.TryResolveMobile(boot1, "session-B",
+              new MobileRuntimeEntity(1, 102), out uint bobNative) &&
+              bobNative == 0x10002001,
+              "mobile entity resolves to native serial with owned session");
+
+        Check(!worldIds.TryResolveNative(boot1, "session-B", 0x10002000, out _),
+              "another authenticated session cannot resolve Alice serial");
+        Check(!worldIds.TryResolveMobile(boot1, "session-A",
+              new MobileRuntimeEntity(1, 102), out _),
+              "another session cannot resolve Bob mobile Ident");
+        Check(!worldIds.TryResolveNative(boot2, "session-A", 0x10002000, out _),
+              "wrong boot epoch cannot resolve transient ID");
+        Check(!worldIds.TryResolveNative(boot1, "", 0x10002000, out _),
+              "missing session cannot resolve player ID");
+
+        var duplicateNative = bob with { Native = alice.Native, SessionKey = "session-C" };
+        Check(worldIds.BindVerified(duplicateNative) == BindOutcome.Conflict,
+              "native serial collision rejected");
+        var duplicateMobile = bob with {
+            Native = new NativeRuntimeEntity(boot1, 0x10002004),
+            Mobile = alice.Mobile, SessionKey = "session-C"
+        };
+        Check(worldIds.BindVerified(duplicateMobile) == BindOutcome.Conflict,
+              "Mobile Ident collision rejected");
+        var duplicateSession = bob with {
+            Native = new NativeRuntimeEntity(boot1, 0x10002004),
+            Mobile = new MobileRuntimeEntity(1, 106),
+            SessionKey = "session-A"
+        };
+        Check(worldIds.BindVerified(duplicateSession) == BindOutcome.Conflict,
+              "one session cannot control two runtime identities");
+        Check(worldIds.BoundCount == 2, "collisions do not mutate valid bindings");
+
+        Check(worldIds.BindVerified(alice with {
+            Native = new NativeRuntimeEntity(boot2, 0x10002000),
+            SessionKey = "new-boot"
+        }) == BindOutcome.Invalid, "stale/future boot binding rejected");
+        Check(worldIds.BindVerified(alice with {
+            Native = new NativeRuntimeEntity(boot1, 0)
+        }) == BindOutcome.Invalid, "zero native serial rejected");
+        Check(worldIds.BindVerified(alice with {
+            Mobile = new MobileRuntimeEntity(1, 0)
+        }) == BindOutcome.Invalid, "invalid mobile index rejected");
+        Check(worldIds.BindVerified(alice with { Account = "" }) == BindOutcome.Invalid,
+              "unverified account cannot be bound");
+
+        Check(worldIds.ForgetVerifiedSession("session-A"),
+              "logout clears an identity binding");
+        Check(!worldIds.TryResolveNative(boot1, "session-A", 0x10002000, out _),
+              "removed session loses access immediately");
+        Check(worldIds.BoundCount == 1, "session revoke only clears its mapping");
+        Check(!worldIds.ForgetVerifiedSession("session-A"),
+              "duplicate logout does not corrupt registry");
+
+        // After server restart, the *same numeric serial* may reappear.
+        worldIds.ResetForNativeServerRestart(boot2);
+        Check(worldIds.BoundCount == 0, "server restart invalidates every mapping");
+        Check(!worldIds.TryResolveNative(boot1, "session-B", 0x10002001, out _),
+              "prior epoch mapping cannot be reused");
+        Check(worldIds.BindVerified(new LabEntityBinding(
+                "TEST1", "LabKnight", "new-session",
+                new NativeRuntimeEntity(boot2, 0x10002000),
+                new MobileRuntimeEntity(9, 501))) == BindOutcome.Created,
+              "recycled native serial requires new verified identity and epoch");
+        Check(!worldIds.TryResolveMobile(boot2, "session-A",
+              new MobileRuntimeEntity(9, 501), out _),
+              "expired session cannot take over recycled identity");
+        Throws<ArgumentException>(() => worldIds.ResetForNativeServerRestart(boot2),
+              "restart cannot reuse the same epoch");
+        Throws<ArgumentException>(() => new LabIdentityCrosswalk(Guid.Empty),
+              "server epoch must not be empty");
+
+        Console.WriteLine($"PASS: {passed} Desktop protocol, position and runtime identity assertions.");
         Console.WriteLine("PASS: no network, no player credentials, no server modification.");
         Console.WriteLine("NOTE: packet opcode handlers, encryption and world state are NOT implemented.");
         return 0;
